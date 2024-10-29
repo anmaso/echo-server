@@ -1,6 +1,9 @@
 const http = require('http');
 const server = http.createServer();
 
+const HOST = process.env.HOST || '0.0.0.0';
+const PORT = parseInt(process.env.PORT || '3000');
+
 
 let requestCounter = 0;
 let echoBody = true;
@@ -123,4 +126,4 @@ server.on('request', (request, response) => {
 
   });
 
-}).listen(3000);
+}).listen({host:HOST, port:PORT});
