@@ -205,4 +205,14 @@ describe('HTTP Server Test Suite', () => {
     assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
     assert.strictEqual(response.body.length, 100, 'Response should be 100 characters long');
   });
+  test('GET /:delay/100', async () => {
+    const options = { ...baseOptions, path: '/:delay/100'};
+    const d1 = new Date().getTime();
+    const response = await makeRequest(options);
+    const d2 = new Date().getTime();
+    console.log(d2-d1)
+
+    assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
+    assert.ok((d2-d1)>100, 'There should be a 100ms delay for the response');
+  });
 });

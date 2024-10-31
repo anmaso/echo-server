@@ -1,5 +1,9 @@
 const http = require('http');
 const server = http.createServer();
+const os = require('os');
+
+const hostname=os.hostname();
+const version=os.version();
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT || '3000');
@@ -13,11 +17,11 @@ let statusCode = 200;
 let errorCode = 0;
 let errorPct = 0;
 let showTime = true;
+let delay = 0;
 
 const cacheBuffers = {}
 
 const createRandomBuffer = (length) => {
-  console.log("createRandomString", length)
   var buffer = Buffer.alloc(length);
 
   for (var i = 0; i < length; i++) {
@@ -52,20 +56,18 @@ const getBuffer = (length) => {
 const setSettings = (url) => {
   const [cmd, ..._args] = url.slice(1).split('/');
   if (!cmd.startsWith(':')) return;
-  console.log("cmd", cmd, _args);
   ({
     echobody: (value) => echoBody = (value === "true"),
-    echojson: (value) => {console.log("value", value); echoJSON = (value === "true")},
+    echojson: (value) => { echoJSON = (value === "true")},
     statuscode: (value) => statusCode = parseInt(value, 10),
     consolelog: (value) => consolelog = value === "true",
     showtime: (value) => showTime = value === "true",
+    delay: (value) => delay = value,
     errorcode: (error, pct) => {
-      console.log("----", error, pct, _args)
       errorPct = pct || 1;
       errorCode = error;
     },
   })[cmd.slice(1)]?.call(null, ..._args);
-  console.log("11", echoJSON)
 };
 
 const transformBody = (request, body, opts, code) => {
@@ -83,7 +85,8 @@ const transformBody = (request, body, opts, code) => {
   };
   if (opts.settings) {
     body = {
-      echoJSON, echoBody, consoleLog, requestCounter, statusCode, errorCode, errorPct
+      echoJSON, echoBody, consoleLog, requestCounter, statusCode, errorCode, errorPct,
+    hostname, version, time: new Date().toISOString(),
     };
   }
   if (opts.echoJSON) {
@@ -156,8 +159,6 @@ server.on('request', (request, response) => {
   let body = [];
   setSettings(request.url);
   const opts = getOpts(request.url, getHeaderOpts(request.headers));
-  console.log(opts)
-  console.log("2", echoJSON)
   request.on('data', (chunk) => {
     body.push(chunk);
   }).on('end', () => {
@@ -187,7 +188,14 @@ server.on('request', (request, response) => {
       }
       response.write(body);
     }
-    response.end();
+
+    if (delay>0){
+      setTimeout(()=>{
+          response.end();
+      }, delay);
+    }else {
+      response.end();
+    }
 
   });
 
