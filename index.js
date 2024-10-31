@@ -17,6 +17,7 @@ let showTime = true;
 const cacheBuffers = {}
 
 const createRandomBuffer = (length) => {
+  console.log("createRandomString", length)
   var buffer = Buffer.alloc(length);
 
   for (var i = 0; i < length; i++) {
@@ -48,38 +49,57 @@ const getBuffer = (length) => {
   return buffer;
 }
 
-const commands = {
-  params: (...args) => console.log(args),
-  echobody: (value) => echoBody = (value === "true"),
-  echojson: (value) => echoJSON = (value === "true"),
-  statuscode: (value) => statusCode = parseInt(value, 10),
-  consolelog: (value) => consolelog = value === "true",
-  showtime: (value) => showTime = value === "true",
-  settings: (value) => {
-    const body = JSON.stringify({
-      echoBody, consoleLog, requestCounter, statusCode
+const setSettings = (url) => {
+  const [cmd, ..._args] = url.slice(1).split('/');
+  if (!cmd.startsWith(':')) return;
+  console.log("cmd", cmd, _args);
+  ({
+    echobody: (value) => echoBody = (value === "true"),
+    echojson: (value) => echoJSON = (value === "true"),
+    statuscode: (value) => statusCode = parseInt(value, 10),
+    consolelog: (value) => consolelog = value === "true",
+    showtime: (value) => showTime = value === "true",
+    errorcode: (error, pct) => {
+      console.log("----", error, pct, _args)
+      errorPct = pct || 1;
+      errorCode = error;
     },
-      null, 2);
-    console.log(body);
-    return { body }
-  },
-  errorcode: (error, pct) => {
-    errorPct = pct || 1;
-    errorCode = error;
-  },
-  buffer: (length) => ({ body: getBuffer(parseInt(length)) }),
-  randombuffer: (length) => ({ body: createRandomBuffer(parseInt(length)) }),
-  string: (length) => ({ body: getString(parseInt(length)) }),
-  randomstring: (length) => ({ body: createRandomString(parseInt(length)) })
+  })[cmd.slice(1)]?.call(null, ..._args);
+  console.log("11", echoJSON)
+};
+
+const transformBody = (request, body, opts, code) => {
+  if (opts.buffer) {
+    body = getBuffer(parseInt(opts.buffer));
+  }
+  if (opts.randombuffer) {
+    body = createRandomBuffer(parseInt(opts.randombuffer));
+  }
+  if (opts.string) {
+    body = getString(parseInt(opts.string));
+  }
+  if (opts.randomstring) {
+    body = createRandomString(parseInt(opts.randomstring))
+  };
+  if (opts.settings) {
+    body = {
+      echoBody, consoleLog, requestCounter, statusCode, errorCode, errorPct
+    };
+  }
+  if (opts.echoJSON) {
+    body = formatJSON(request, body, code)
+  };
+  return body;
 }
 
-const formatJSON = (request, body) => JSON.stringify({
+const formatJSON = (request, body, code) => ({
   method: request.method,
   url: request.url,
   headers: request.headers,
   cookies: request.cookies,
-  body
-}, null, 2);
+  body,
+  code
+});
 
 const log = (...args) => consoleLog && console.log(...args);
 
@@ -89,50 +109,82 @@ const cmdFromUrl = (url) => {
   return [parts[0].slice(1), parts.slice(1)];
 }
 
-const cmdFromHeaders = (headers)=>{
-  Object.keys(headers).filter(h=>h.startsWith('x-cmd')>=0)
-}
-
-
-const execCmd = (url, headers, body) => {
-  const [cmd, args] = cmdFromUrl(url);
-  try {
-    const res = commands[cmd](...args);
-    return (res && res.body) ? res.body : body;
-  } catch (err) {
-    console.log("err:", err);
+const getHeaderOpts = (headers) => {
+  const values = Object.entries(headers).reduce((acc, [h, v]) => {
+    h = h.toLocaleLowerCase();
+    console.log(h)
+    if (h.startsWith('x-cmd-')) {
+      acc[h.replace('x-cmd-', '')] = v;
+    }
+    return acc;
+  }, {})
+  return {
+    ... (values.echojson && { echojson: values.echojson === "true" }),
+    ... (values.consolelog && { echojson: values.consolelog === "true" }),
+    ... (values.echojson && { echoJSON: values.echojson === "true" }),
+    ... (values.statuscode && { statusCode: values.statuscode }),
+    ... (values.errorcode && { errorCode: values.errorcode }),
+    ... (values.errorpct && { errorPct: values.errorpct }),
+    ... (values.showtime && { showTime: values.showtime }),
   }
 }
+
+const getOpts = (url, overrides) => {
+  const [cmd, _args] = url.slice(1).split('/');
+  return {
+    echoBody,
+    consoleLog,
+    echoJSON,
+    statusCode,
+    errorCode,
+    errorPct,
+    showTime,
+    ...(cmd == ":echojson" && { echoJSON: true }),
+    ...(cmd == ":settings" && { settings: true }),
+    ...(cmd == ":string" && { string: _args }),
+    ...(cmd == ":randomstring" && { randomstring: _args }),
+    ...(cmd == ":buffer" && { buffer: _args }),
+    ...(cmd == ":randombuffer" && { randombuffer: _args }),
+    ...overrides
+  }
+};
+
+
 
 server.on('request', (request, response) => {
   requestCounter += 1;
   let body = [];
+  setSettings(request.url);
+  const opts = getOpts(request.url, getHeaderOpts(request.headers));
+  console.log(opts)
+  console.log("2", echoJSON)
   request.on('data', (chunk) => {
     body.push(chunk);
-
   }).on('end', () => {
     body = Buffer.concat(body).toString();
-    body = execCmd(request.url, request.headers, body);
+
     const time = new Date().toISOString();
-    if (showTime) {
+    if (opts.showTime) {
       log(time);
     }
     log(`==== ${request.method} ${request.url}`);
     log('> Headers');
     log(request.headers);
+
+    let code = opts.statusCode;
+    if (opts.errorCode && opts.errorCode != "200" && (requestCounter % opts.errorPct == 0)) {
+      code = opts.errorCode;
+    }
+    response.statusCode = code;
+    body = transformBody(request, body, opts, code);
     log('> Body');
     log(body, echoBody);
 
-    if (errorCode && (requestCounter % errorPct == 0)) {
-      response.statusCode = errorCode;
-    } else {
-      response.statusCode = statusCode;
-    }
-
-    if (echoJSON) {
-      body = formatJSON(request, body);
-    }
-    if (echoBody && body) {
+    if (opts.echoBody && body) {
+      if (typeof(body)=="object"){
+        response.setHeader('Content-Type', 'application/json');
+        body = JSON.stringify(body, null, 2);
+      }
       response.write(body);
     }
     response.end();

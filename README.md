@@ -27,6 +27,15 @@ To send a command, use a GET request with the following format
 |randomstring | Returns a BODY of a random string of length [arg1] ||
 |string       | Random cached string, same value for the same size||
 
+## header commands
+
+Commands can also be sent using headers with `x-cmd-` prefix
+
+```
+curl http://localhost:3000/hello-world -H "x-cmd-echojson: true"`
+curl http://localhost:3000/hello-world -H "x-cmd-statuscode: 401" -v`
+```
+
 
 
 
@@ -37,20 +46,29 @@ Here there are some test commands for the echo server
 ```
 
 curl http://localhost:3000/
+curl http://localhost:3000/ -v
 
 curl http://localhost:3000/hello-world
+curl http://localhost:3000/hello-world -H "x-cmd-echojson: true"
+curl http://localhost:3000/hello-world -H "x-cmd-statuscode: 401" -v
 
 
 curl http://localhost:3000/:settings
+curl http://localhost:3000/:settings -v
 curl http://localhost:3000/:echojson/true
+curl http://localhost:3000/:echojson/false
 
 curl -X POST http://localhost:3000/:echojson/true -d 'hello'
 curl -v -X POST http://localhost:3000/:statuscode/500 -d 'hello'
-curl -v -X POST http://localhost:3000/:errorcode/500/10 -d 'hello'
+curl -v -X POST http://localhost:3000/:statuscode/200 -d 'hello'
+curl -v -X POST http://localhost:3000/:errorcode/500/4 -d 'hello'
+curl -v -X POST http://localhost:3000/:errorcode/200/4 -d 'hello'
 curl -v http://localhost:3000/
 
 curl -v http://localhost:3000/:randombuffer/100
 curl -v http://localhost:3000/:randomstring/100
+curl -v http://localhost:3000/:string/100
+
 curl -v http://localhost:3000/:string/100
 
 ```
