@@ -55,7 +55,7 @@ const setSettings = (url) => {
   console.log("cmd", cmd, _args);
   ({
     echobody: (value) => echoBody = (value === "true"),
-    echojson: (value) => echoJSON = (value === "true"),
+    echojson: (value) => {console.log("value", value); echoJSON = (value === "true")},
     statuscode: (value) => statusCode = parseInt(value, 10),
     consolelog: (value) => consolelog = value === "true",
     showtime: (value) => showTime = value === "true",
@@ -83,7 +83,7 @@ const transformBody = (request, body, opts, code) => {
   };
   if (opts.settings) {
     body = {
-      echoBody, consoleLog, requestCounter, statusCode, errorCode, errorPct
+      echoJSON, echoBody, consoleLog, requestCounter, statusCode, errorCode, errorPct
     };
   }
   if (opts.echoJSON) {
@@ -139,7 +139,7 @@ const getOpts = (url, overrides) => {
     errorCode,
     errorPct,
     showTime,
-    ...(cmd == ":echojson" && { echoJSON: true }),
+    ...(cmd == ":echojson" && { echoJSON: _args==='true' }),
     ...(cmd == ":settings" && { settings: true }),
     ...(cmd == ":string" && { string: _args }),
     ...(cmd == ":randomstring" && { randomstring: _args }),
@@ -181,7 +181,7 @@ server.on('request', (request, response) => {
     log(body, echoBody);
 
     if (opts.echoBody && body) {
-      if (typeof(body)=="object"){
+      if (typeof (body) == "object" && !Buffer.isBuffer(body)) {
         response.setHeader('Content-Type', 'application/json');
         body = JSON.stringify(body, null, 2);
       }
