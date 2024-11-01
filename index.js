@@ -11,6 +11,7 @@ const PORT = parseInt(process.env.PORT || "3000");
 let requestCounter = 0;
 let echoBody = true;
 let consoleLog = true;
+let consoleCompact = false;
 let echoContext = false;
 let statusCode = 200;
 let errorCode = 0;
@@ -22,6 +23,17 @@ let delay = 0;
 const requestHistory = [];
 
 const cacheBuffers = {};
+
+const fmtDate = (date) => {
+  let year = date.getFullYear();
+  let month = ("0" + (date.getMonth() + 1)).slice(-2);
+  let day = ("0" + date.getDate()).slice(-2);
+  let hours = ("0" + date.getHours()).slice(-2);
+  let minutes = ("0" + date.getMinutes()).slice(-2);
+  let seconds = ("0" + date.getSeconds()).slice(-2);
+  let dateTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  return dateTime;
+};
 
 const createRandomBuffer = (length) => {
   var buffer = Buffer.alloc(length);
@@ -65,9 +77,10 @@ const setGlobalSettings = (url) => {
     },
     globalstatuscode: (value) => (statusCode = parseInt(value, 10)),
     consolelog: (value) => (consoleLog = value === "true"),
+    consolecompact: (value) => (consoleCompact = value === "true"),
     showtime: (value) => (showTime = value === "true"),
     delay: (value) => (delay = value),
-    errorcode: (error, pct) => {
+    globalerrorcode: (error, pct) => {
       errorPct = pct || 1;
       errorCode = error;
     },
@@ -99,7 +112,7 @@ const getContent = (ctx) => {
       errorPct,
       hostname,
       version,
-      time: ctx.time.toISOString(),
+      time: fmtDate(ctx.time),
     };
   }
   if (ctx.log) {
@@ -157,16 +170,18 @@ const getGlobalSettings = () => ({
 });
 
 const getQueryCommands = (url) => {
-  const [cmd, _args] = url.slice(1).split("/");
+  const [cmd, ..._args] = url.slice(1).split("/");
   return {
     ...(cmd == ":statuscode" && { statusCode: _args }),
-    ...(cmd == ":echocontext" && { echoContext: _args === "true" }),
+    ...(cmd == ":errorcode" && { errorCode: _args[0], errorPct: _args[1] }),
+    ...(cmd == ":echocontext" && { echoContext: _args[0] === "true" }),
     ...(cmd == ":settings" && { settings: true }),
     ...(cmd == ":string" && { string: _args }),
     ...(cmd == ":cachedstring" && { cachedstring: _args }),
     ...(cmd == ":buffer" && { buffer: _args }),
     ...(cmd == ":randombuffer" && { randombuffer: _args }),
     ...(cmd == ":log" && { log: _args }),
+    ...(cmd == ":consolecompact" && { consoleCompact: _args[0] === "true" }),
   };
 };
 
@@ -191,7 +206,11 @@ const storeRequest = (ctx) => {
 };
 
 const logRequest = (ctx) => {
-  log(` ${ctx.time} ======
+  if (consoleCompact) {
+    log(`${fmtDate(ctx.time)} ${ctx.statusCode} ${ctx.request.method} ${ctx.request.url}`);
+    return;
+  }
+  log(`${fmtDate(ctx.time)} ======
     ${ctx.statusCode} ${ctx.request.method} ${ctx.request.url}
     > Headers
     ${JSON.stringify(ctx.request.headers, null, 2)}
@@ -224,7 +243,7 @@ server
 
         logRequest(ctx, content);
         storeRequest(ctx);
-        console.log(JSON.stringify(ctx, null, 2), content);
+        //        console.log(JSON.stringify(ctx, null, 2), content);
 
         response.statusCode = ctx.statusCode;
         Object.entries(ctx.headers).forEach(([h, v]) => response.setHeader(h, v));
