@@ -6,6 +6,7 @@ const xtest = ()=>null
 
 // Helper function to make HTTP requests
 const makeRequest = (options, body = null) => {
+  options.method = options.method || 'GET';
   return new Promise((resolve, reject) => {
     const req = http.request(options, (res) => {
       let responseBody = '';
@@ -65,11 +66,11 @@ describe('HTTP Server Test Suite', () => {
   });
 
   // Test hello-world with echo JSON header
-  test('GET /hello-world with x-cmd-echojson header', async () => {
+  test('GET /hello-world with x-cmd-echocontext header', async () => {
     const options = {
       ...baseOptions,
       path: '/hello-world',
-      headers: { 'x-cmd-echojson': 'true' }
+      headers: { 'x-cmd-echocontext': 'true' }
     };
     const response = await makeRequest(options);
 
@@ -95,21 +96,21 @@ describe('HTTP Server Test Suite', () => {
     const response = await makeRequest(options);
 
     assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
-    assert.ok(response.body.indexOf('echoJSON')>=0, 'Response body should contain '+'echoJSON');
+    assert.ok(response.body.indexOf('echoContext')>=0, 'Response body should contain '+'echoContext');
     assert.ok(response.body.indexOf('echoBody')>=0, 'Response body should contain '+'echoBody');
   });
 
   // Test echo JSON endpoints
-  test('GET /:echojson/true', async () => {
-    const options = { ...baseOptions, path: '/:echojson/true' };
+  test('GET /:echocontext/true', async () => {
+    const options = { ...baseOptions, path: '/:echocontext/true' };
     const response = await makeRequest(options);
 
     assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
     assert.doesNotThrow(() => JSON.parse(response.body), 'Response should be valid JSON');
   });
 
-  test('GET /:echojson/false', async () => {
-    const options = { ...baseOptions, path: '/:echojson/false' };
+  test('GET /:echocontext/false', async () => {
+    const options = { ...baseOptions, path: '/:echocontext/false' };
     const response = await makeRequest(options);
 
     assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
@@ -117,10 +118,10 @@ describe('HTTP Server Test Suite', () => {
   });
 
   // Test POST endpoints
-  test('POST /:echojson/true with body', async () => {
+  test('POST /:echocontext/true with body', async () => {
     const options = {
       ...baseOptions,
-      path: '/:echojson/true',
+      path: '/:echocontext/true',
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' }
     };
@@ -142,7 +143,7 @@ describe('HTTP Server Test Suite', () => {
     assert.strictEqual(response.statusCode, 500, 'Status code should be 500');
   });
 
-  test('POST /:statuscode/200 with body', async () => {
+  test('post /:statuscode/200 with body', async () => {
     const options = {
       ...baseOptions,
       path: '/:statuscode/200',
@@ -151,6 +152,21 @@ describe('HTTP Server Test Suite', () => {
     };
     const response = await makeRequest(options, 'hello');
 
+    assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
+  });
+  test('post /:globalstatuscode/500', async () => {
+    let response = await makeRequest({...baseOptions, path:'/'});
+    assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
+
+    response = await makeRequest({...baseOptions, path:'/:globalstatuscode/500'});
+    assert.strictEqual(response.statusCode, 500, 'Status code should be 500');
+    response = await makeRequest({...baseOptions, path:'/'});
+    assert.strictEqual(response.statusCode, 500, 'Status code should be 500');
+    response = await makeRequest({...baseOptions, path:'/:statuscode/200'});
+    assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
+    response = await makeRequest({...baseOptions, path:'/:globalstatuscode/200'});
+    assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
+    response = await makeRequest({...baseOptions, path:'/'});
     assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
   });
 
@@ -162,9 +178,17 @@ describe('HTTP Server Test Suite', () => {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' }
     };
-    const response = await makeRequest(options, 'hello');
-
-    assert.strictEqual(response.statusCode, 500, 'Status code should be 500');
+    let responses = [];
+    let response = await makeRequest(options, 'hello');
+    responses.push(response.statusCode);
+    response = await makeRequest(options, 'hello');
+    responses.push(response.statusCode);
+    response = await makeRequest(options, 'hello');
+    responses.push(response.statusCode);
+    response = await makeRequest(options, 'hello');
+    responses.push(response.statusCode);
+    assert.strictEqual(responses.filter(x=>x==200).length, 3, 'Status code should be 200 for 3 requests');
+    assert.strictEqual(responses.filter(x=>x==500).length, 1, 'Status code should be 500 for 1 request');
   });
 
   test('POST /:errorcode/200/4 with body', async () => {
@@ -180,37 +204,38 @@ describe('HTTP Server Test Suite', () => {
   });
 
   // Test random data generation endpoints
-  xtest('GET /:randombuffer/100', async () => {
-    const options = { ...baseOptions, path: '/:randombuffer/100', headers: {'x-cmd-echojson':'false'}};
+  xtest('GET /:randombuffer/10', async () => {
+    const options = { ...baseOptions, path: '/:randombuffer/10', headers: {'x-cmd-echocontext':'false'}};
     const response = await makeRequest(options);
 
     console.log("???????????????", response.body)
     assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
-    assert.strictEqual(response.body.length, 100, 'Response should be 100 characters long');
+    assert.strictEqual(response.body.length, 10, 'Response should be 10 characters long');
   });
 
-  test('GET /:randomstring/100', async () => {
-    const options = { ...baseOptions, path: '/:randomstring/100', headers: {'x-cmd-echojson':'false'}};
+  test('GET /:cachedstring/10', async () => {
+    const options = { ...baseOptions, path: '/:cachedstring/10', headers: {'x-cmd-echocontext':'false'}};
     const response = await makeRequest(options);
 
     assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
-    assert.strictEqual(response.body.length, 100, 'Response should be 100 characters long');
+    assert.strictEqual(response.body.length, 10, 'Response should be 10 characters long');
+    const response2 = await makeRequest(options);
+    assert.strictEqual(response.body, response2.body, 'Cached string should be the same for the same size');
   });
 
   // Test string generation endpoint
-  test('GET /:string/100', async () => {
-    const options = { ...baseOptions, path: '/:string/100', headers: {'x-cmd-echojson':'false'}};
+  test('GET /:string/10', async () => {
+    const options = { ...baseOptions, path: '/:string/10', headers: {'x-cmd-echocontext':'false'}};
     const response = await makeRequest(options);
 
     assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
-    assert.strictEqual(response.body.length, 100, 'Response should be 100 characters long');
+    assert.strictEqual(response.body.length, 10, 'Response should be 10 characters long');
   });
   test('GET /:delay/100', async () => {
     const options = { ...baseOptions, path: '/:delay/100'};
     const d1 = new Date().getTime();
     const response = await makeRequest(options);
     const d2 = new Date().getTime();
-    console.log(d2-d1)
 
     assert.strictEqual(response.statusCode, 200, 'Status code should be 200');
     assert.ok((d2-d1)>100, 'There should be a 100ms delay for the response');

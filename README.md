@@ -16,16 +16,16 @@ To send a command, use a GET request with the following format
 
 
 
-|Command|Description| Default|
-|--|--|--|
-|settings   | Displays the current server settings| |
-|echobody   | Returns the BODY | true |
-|echojson   | Returns as JSON the echo response| false|
-|consolelog | Logs everything through the server console| true|
-|statuscode | Sets the status code for all subsequent requests| 200|
-|errorcode  | Sends the error code at every request number [arg1] | 200 / 1|
-|randomstring | Returns a BODY of a random string of length [arg1] ||
-|string       | Random cached string, same value for the same size||
+|Command      |Description                                           | Default |
+|-------------|------------------------------------------------------|---------|
+|settings     | Displays the current server settings                 |         |
+|echobody     | Returns the BODY                                     | true    |
+|echocontext  | Returns as JSON the echo response context            | false   |
+|consolelog   | Logs everything through the server console           | true    |
+|statuscode   | Sets the status code for all subsequent requests     | 200     |
+|errorcode    | Sends the error code at every request number [arg1]  | 200 / 1 |
+|string       | Returns a BODY of a random string of length [arg1]   |         |
+|cachedstring | Random cached string, same value for the same size   |         |
 
 ## header commands
 
@@ -49,18 +49,20 @@ curl http://localhost:3000/
 curl http://localhost:3000/ -v
 
 curl http://localhost:3000/hello-world
-curl http://localhost:3000/hello-world -H "x-cmd-echojson: true"
+curl http://localhost:3000/hello-world -H "x-cmd-echocontext: true"
 curl http://localhost:3000/hello-world -H "x-cmd-statuscode: 401" -v
 
 
 curl http://localhost:3000/:settings
 curl http://localhost:3000/:settings -v
-curl http://localhost:3000/:echojson/true
-curl http://localhost:3000/:echojson/false
+curl http://localhost:3000/:echocontext/true
+curl http://localhost:3000/:echocontext/false
 
-curl -X POST http://localhost:3000/:echojson/true -d 'hello'
-curl -v -X POST http://localhost:3000/:statuscode/500 -d 'hello'
-curl -v -X POST http://localhost:3000/:statuscode/200 -d 'hello'
+curl -X POST http://localhost:3000/:echocontext/true -d 'hello'
+curl -v -X POST http://localhost:3000/:statuscode/500
+curl -v -X POST http://localhost:3000/:statuscode/200
+curl -v -X POST http://localhost:3000/:globalstatuscode/500
+curl http://localhost:3000/ -v
 curl -v -X POST http://localhost:3000/:errorcode/500/4 -d 'hello'
 curl -v -X POST http://localhost:3000/:errorcode/200/4 -d 'hello'
 curl -v http://localhost:3000/
