@@ -2,25 +2,28 @@ const http = require("http");
 const server = http.createServer();
 const os = require("os");
 
-const hostname = os.hostname();
-const version = os.version();
-
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = parseInt(process.env.PORT || "3000");
 
-let requestCounter = 0;
-let echoBody = true;
-let consoleLog = true;
-let consoleCompact = false;
-let echoContext = false;
-let statusCode = 200;
-let errorCode = 0;
-let errorPct = 0;
-let showTime = true;
-let delay = 0;
+const settings = {
+  requestCounter: 0,
+  echoBody: true,
+  consoleLog: true,
+  consoleCompact: false,
+  echoContext: false,
+  statusCode: 200,
+  errorCode: 0,
+  errorPct: 0,
+  showTime: true,
+  delay: 0,
+  hostname: os.hostname(),
+  version: os.version(),
+};
 
 // Store request logs
 const requestHistory = [];
+
+const storedResponses = {};
 
 const cacheBuffers = {};
 
@@ -67,7 +70,7 @@ const getBuffer = (length) => {
   return buffer;
 };
 
-const setGlobalSettings = (url) => {
+const setGlobalSettings = (url, body) => {
   const [cmd, ..._args] = url.slice(1).split("/");
   if (!cmd.startsWith(":")) return;
   ({
@@ -75,14 +78,17 @@ const setGlobalSettings = (url) => {
     echocontext: (value) => {
       echoContext = value === "true";
     },
-    globalstatuscode: (value) => (statusCode = parseInt(value, 10)),
-    consolelog: (value) => (consoleLog = value === "true"),
-    consolecompact: (value) => (consoleCompact = value === "true"),
-    showtime: (value) => (showTime = value === "true"),
-    delay: (value) => (delay = value),
+    globalstatuscode: (value) => (settings.statusCode = parseInt(value, 10)),
+    consolelog: (value) => (settings.consoleLog = value === "true"),
+    consolecompact: (value) => (settings.consoleCompact = value === "true"),
+    showtime: (value) => (settings.showTime = value === "true"),
+    delay: (value) => (settings.delay = value),
     globalerrorcode: (error, pct) => {
-      errorPct = pct || 1;
-      errorCode = error;
+      settings.errorPct = pct || 1;
+      settings.errorCode = error;
+    },
+    storeresponse: (path) => {
+      storedResponses[path] = body;
     },
   })[cmd.slice(1)]?.call(null, ..._args);
 };
@@ -103,21 +109,19 @@ const getContent = (ctx) => {
   }
   if (ctx.settings) {
     res = {
-      echoContext,
-      echoBody,
-      consoleLog,
-      requestCounter,
-      statusCode,
-      errorCode,
-      errorPct,
-      hostname,
-      version,
+      ...settings,
       time: fmtDate(ctx.time),
     };
   }
   if (ctx.log) {
     const n = parseInt(ctx.log);
     res = requestHistory.slice(-n);
+  }
+  if (ctx.storedResponses) {
+    res = storedResponses;
+  }
+  if (storedResponses[ctx.request.url.slice(1)]) {
+    res = storedResponses[ctx.request.url];
   }
   return res;
 };
@@ -131,7 +135,7 @@ const formatResponseContext = (ctx, body) => ({
   statusCode: ctx.statusCode,
 });
 
-const log = (...args) => consoleLog && console.log(...args);
+const log = (...args) => settings.consoleLog && console.log(...args);
 
 const cmdFromUrl = (url) => {
   const parts = url.slice(1).split("/");
@@ -139,50 +143,35 @@ const cmdFromUrl = (url) => {
   return [parts[0].slice(1), parts.slice(1)];
 };
 
+const getContextFromCommand = (v) => {
+  return {
+    ...(v.echocontext && { echoContext: v.echocontext[0] === "true" }),
+    ...(v.settings && { settings: true }),
+    ...(v.consolelog && { consoleLog: v.consolelog === "true" }),
+    ...(v.statuscode && { statusCode: v.statuscode }),
+    ...(v.errorcode && { errorCode: v.errorcode[0], errorPct: v.errorcode[1] }),
+    ...(v.cachedstring && { cachedstring: v.cachedstring[0] }),
+    ...(v.string && { string: v.string[0] }),
+    ...(v.errorpct && { errorPct: v.errorpct }),
+    ...(v.showtime && { showTime: v.showtime }),
+    ...(isFinite(v.delay) && { delay: v.delay }),
+  };
+};
+
+const getQueryCommands = (url) => {
+  const [cmd, ..._args] = url.slice(1).split("/");
+  return getContextFromCommand({ [cmd.slice(1)]: _args });
+};
+
 const getHeaderCommands = (headers) => {
   const values = Object.entries(headers).reduce((acc, [h, v]) => {
     h = h.toLocaleLowerCase();
     if (h.startsWith("x-cmd-")) {
-      acc[h.replace("x-cmd-", "")] = v;
+      acc[h.replace("x-cmd-", "")] = v.split(" ");
     }
     return acc;
   }, {});
-  return {
-    ...(values.echocontext && { echoContext: values.echocontext === "true" }),
-    ...(values.consolelog && { consoleLog: values.consolelog === "true" }),
-    ...(values.statuscode && { statusCode: values.statuscode }),
-    ...(values.errorcode && { errorCode: values.errorcode }),
-    ...(values.errorpct && { errorPct: values.errorpct }),
-    ...(values.showtime && { showTime: values.showtime }),
-    ...(isFinite(values.delay) && { delay: values.delay }),
-  };
-};
-
-const getGlobalSettings = () => ({
-  echoBody,
-  consoleLog,
-  echoContext,
-  statusCode,
-  errorCode,
-  errorPct,
-  delay,
-  showTime,
-});
-
-const getQueryCommands = (url) => {
-  const [cmd, ..._args] = url.slice(1).split("/");
-  return {
-    ...(cmd == ":statuscode" && { statusCode: _args }),
-    ...(cmd == ":errorcode" && { errorCode: _args[0], errorPct: _args[1] }),
-    ...(cmd == ":echocontext" && { echoContext: _args[0] === "true" }),
-    ...(cmd == ":settings" && { settings: true }),
-    ...(cmd == ":string" && { string: _args }),
-    ...(cmd == ":cachedstring" && { cachedstring: _args }),
-    ...(cmd == ":buffer" && { buffer: _args }),
-    ...(cmd == ":randombuffer" && { randombuffer: _args }),
-    ...(cmd == ":log" && { log: _args }),
-    ...(cmd == ":consolecompact" && { consoleCompact: _args[0] === "true" }),
-  };
+  return getContextFromCommand(values);
 };
 
 const getResponseContext = (request) => {
@@ -193,7 +182,7 @@ const getResponseContext = (request) => {
       headers: request.headers,
       cookies: request.cookies,
     },
-    ...getGlobalSettings(),
+    ...settings,
     ...getQueryCommands(request.url),
     ...getHeaderCommands(request.headers),
     headers: {},
@@ -206,7 +195,7 @@ const storeRequest = (ctx) => {
 };
 
 const logRequest = (ctx) => {
-  if (consoleCompact) {
+  if (settings.consoleCompact) {
     log(`${fmtDate(ctx.time)} ${ctx.statusCode} ${ctx.request.method} ${ctx.request.url}`);
     return;
   }
@@ -221,17 +210,17 @@ const logRequest = (ctx) => {
 
 server
   .on("request", (request, response) => {
-    requestCounter += 1;
+    settings.requestCounter += 1;
     let body = [];
-    setGlobalSettings(request.url);
-    const ctx = getResponseContext(request);
     request
       .on("data", (chunk) => {
         body.push(chunk);
       })
       .on("end", () => {
         body = Buffer.concat(body).toString();
-        if (ctx.errorCode && ctx.errorCode != "200" && requestCounter % ctx.errorPct == 0) {
+        setGlobalSettings(request.url, body);
+        const ctx = getResponseContext(request);
+        if (ctx.errorCode && ctx.errorCode != "200" && settings.requestCounter % ctx.errorPct == 0) {
           ctx.statusCode = ctx.errorCode;
         }
 
@@ -261,10 +250,10 @@ server
           }
         }
 
-        if (delay > 0) {
+        if (ctx.delay > 0) {
           setTimeout(() => {
             response.end();
-          }, delay);
+          }, ctx.delay);
         } else {
           response.end();
         }
