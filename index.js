@@ -1,11 +1,13 @@
 const express = require("express");
 const os = require("os");
-const app = express();
+const http = require('http');
+const url = require('url');
+const fs = require('fs');
+const PATH = require('path');
 
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = parseInt(process.env.PORT || "3000");
 
-// Global settings object
 const getDefaultConfig = () => ({
   requestCounter: 0,
   consoleLog: true,
@@ -13,30 +15,29 @@ const getDefaultConfig = () => ({
   echoContext: false,
   hostname: os.hostname(),
   version: os.version(),
-  urlConfigs: {
+  byUrl: {
   },
   allUrls: {
     delay: 0,
     errorCode: 0,
-    errorPct: 0,
+    errorPct: 1,
     statusCode: 200,
     counter: {},
   }
 });
 
-let settings = getDefaultConfig();
+let globalConfig = getDefaultConfig();
 
 // Storage
 const requestHistory = [];
-const storedResponses = {};
 const cacheBuffers = {};
 const cacheStrings = {};
 
 const addStat = (path, method) => {
-  settings.urlConfigs[path] ||= {};
-  settings.urlConfigs[path].counter ||= {};
-  settings.urlConfigs[path].counter[method] ||= 0;
-  settings.urlConfigs[path].counter[method]++;
+  globalConfig.byUrl[path] ||= {};
+  globalConfig.byUrl[path].counter ||= {};
+  globalConfig.byUrl[path].counter[method] ||= 0;
+  globalConfig.byUrl[path].counter[method]++;
 };
 
 // Utility functions
@@ -88,74 +89,154 @@ const formatResponseContext = (ctx, body) => ({
   statusCode: ctx.statusCode,
 });
 
-const log = (...args) => settings.consoleLog && console.log(...args);
+const log = (...args) => globalConfig.consoleLog && console.log(...args);
 
 const logRequest = (ctx) => {
-  if (settings.consoleCompact) {
-    log(`${fmtDate(ctx.time)} ${ctx.settings.statusCode} ${ctx.request.method} ${ctx.request.url}`);
+  log(`${fmtDate(ctx.time)} ${ctx.responseConfig.statusCode} ${ctx.request.method} ${ctx.request.url}`);
+  if (globalConfig.consoleCompact) {
     return;
   }
-  log(`${fmtDate(ctx.time)} ======
-    ${ctx.settings.statusCode} ${ctx.request.method} ${ctx.request.url}
-    > Headers
-    ${JSON.stringify(ctx.request.headers, null, 2)}
-    > Body
-    ${ctx.body}
-  `);
+  Object.entries(ctx.request.headers).forEach(([k, v]) => log(`  ${k}: ${v}`));
+  ctx.request.body && log(ctx.request.body);
 };
 
-// Middleware
-app.use(express.text({ type: "*/*" }));
-app.disable("etag");
-app.set("json spaces", 4);
 
-app.use(async (req, res, next) => {
-  settings.requestCounter += 1;
+async function handleResponse(req, res, content) {
+  const ctx = req.ctx;
+  const cfg = ctx.responseConfig;
 
-  let path = req.path;
+  if (cfg.errorCode && cfg.errorCode != cfg.statusCode && globalConfig.requestCounter % ctx.responseConfig.errorPct == 0) {
+    ctx.responseConfig.statusCode = ctx.responseConfig.errorCode;
+  }
+
+  if (ctx.responseConfig.echoContext || (typeof content == "object" && !Buffer.isBuffer(content))) {
+    ctx.response.headers["Content-Type"] = "application/json; charset=utf-8";
+  }
+
+  logRequest(ctx);
+  requestHistory.push(ctx);
+
+  res.statusCode = parseInt(ctx.responseConfig.statusCode);
+
+  Object.entries(ctx.response.headers).forEach(([h, v]) => res.setHeader(h, v));
+  removeExpressHeaders(res);
+
+  let url = req.url;
+  let configuredResponse = globalConfig.byUrl[url]?.body;
+  content = content || configuredResponse || (req.method != "GET" && req.body) || { ...ctx, responseConfig: undefined };
+  if (ctx.responseConfig.echoBody) {
+    content = ctx.request.body;
+  }
+  if (ctx.responseConfig.echoContext) {
+    content = formatResponseContext(ctx, content);
+  }
+  if (content) {
+    if (typeof content === 'object') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.write(JSON.stringify(content));
+    } else if (Buffer.isBuffer(content)) {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.write(content);
+    } else {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.write(content);
+    }
+  }
+  res.end();
+}
+
+function removeExpressHeaders(res) {
+  res.removeHeader("X-Powered-By");
+  res.removeHeader("Date");
+  res.removeHeader("Connection");
+  res.removeHeader("Keep-Alive");
+}
+
+
+function getBody(request) {
+  return new Promise((resolve) => {
+    const bodyParts = [];
+    let body;
+    request.on('data', (chunk) => {
+      bodyParts.push(chunk);
+    }).on('end', () => {
+      body = Buffer.concat(bodyParts).toString();
+      resolve(body)
+    });
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  const body = await getBody(req);
+  return processRequest(req, res, body);
+});
+
+const sendUI = (req, res) => {
+  fs.readFile(PATH.join(__dirname, 'ui.html'), (err, data) => {
+    if (err) {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Internal Server Error');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(data);
+  });
+
+}
+
+
+const processRequest = async (req, res, requestBody) => {
+  globalConfig.requestCounter += 1;
+  const parsedUrl = url.parse(req.url, true);
+  const requestPath = parsedUrl.pathname.replace(/^\//g, '');
+  const query = parsedUrl.query;
+
   req.ctx = {
     request: {
       method: req.method,
       url: req.url,
-      body: req.body,
+      body: requestBody,
       headers: req.headers,
       cookies: req.cookies,
-      ...(req.params.length && { params: req.params }),
-      ...(req.query.length && { query: req.query }),
+      ...(query.length && { query: query }),
     },
-    settings: { ...settings.allUrls, ...settings.urlConfigs[path] },
+    responseConfig: { ...globalConfig.allUrls, ...globalConfig.byUrl[requestPath] },
     response: { headers: {} },
     time: new Date(),
   };
-  addStat(path, req.method);
-  next();
-});
+  let content = req.ctx;
+  addStat(requestPath, req.method);
 
-app.all(/\.config.*/, (req, res) => {
-  let { path, delay, statusCode, errorCode, errorPct, reset, string, stringCache, stats, log, body, echoBody } = req.query;
-  let config = settings.allUrls;
-  let content
+  let { delay, statusCode, errorCode, errorPct, reset, string, stringCache, stats, log, body, echoBody, showConfig, path, ui } = query;
+
+  if (ui) {
+    console.log("UI requested");
+    return sendUI(req, res);
+  }
+
+  const pathParam = path;
   if (reset) {
-    if (path) {
-      settings.urlConfigs[path] = {}
+    if (pathParam) {
+      globalConfig.byUrl[pathParam] = {}
     } else {
-      settings = getDefaultConfig();
-
+      globalConfig = getDefaultConfig();
     }
   }
-  if (path) {
-    config = settings.urlConfigs[path] || {}
-    settings.urlConfigs[path] = config;
+  //decide if we are talking about a specific path or the global config
+  let config = globalConfig.allUrls;
+  if (pathParam) {
+    config = globalConfig.byUrl[pathParam] || {}
+    globalConfig.byUrl[pathParam] = config;
   }
-  if (path && body) {
+  if (pathParam && body) {
     if (req.method == "POST") {
-      config.body = req.body
+      config.body = content;
     } else {
       config.body = body;
     }
   }
-  if (path && echoBody) {
-      config.echoBody = echoBody=="true"
+  if (echoBody) {
+    config.echoBody = echoBody == "true"
   }
   if (delay) {
     config.delay = parseInt(delay, 10);
@@ -169,6 +250,9 @@ app.all(/\.config.*/, (req, res) => {
   if (errorPct) {
     config.errorPct = parseInt(errorPct, 10);
   }
+  if (globalConfig.byUrl[requestPath]?.body) {
+    content = globalConfig.byUrl[requestPath].body;
+  }
   if (string) {
     content = createRandomString(parseInt(string))
   }
@@ -176,90 +260,24 @@ app.all(/\.config.*/, (req, res) => {
     content = getString(parseInt(stringCache))
   }
   if (stats) {
-
-    if (!path || path == '*') {
-      content = Object.entries(settings.urlConfigs).reduce((acc, [k, v]) => ({ ...acc, ...(v.counter && { [k]: v.counter }) }), {})
+    if (stats == '*') {
+      content = Object.entries(globalConfig.byUrl).reduce((acc, [k, v]) => ({ ...acc, ...(v.counter && { [k]: v.counter }) }), {})
     } else {
-      content = settings.urlConfigs[path]?.counter || {}
+      content = globalConfig.byUrl[stats]?.counter || {}
     }
   }
   if (log) {
     content = requestHistory.slice(-parseInt(log));
   }
-  if (Object.keys(req.query).length == 0) {
-    content = settings
-  }
-  handleResponse(req, res, content);
-});
-
-async function handleResponseLogic(req, res, content = null) {
-  const ctx = req.ctx;
-
-  const SETTINGS = { ...settings.allUrls, ...settings.urlConfigs[req.path] };
-  let code = SETTINGS.statusCode;
-
-  // Handle error simulation
-  if (SETTINGS.errorCode && ctx.settings.errorCode != "200" && settings.requestCounter % ctx.settings.errorPct == 0) {
-    ctx.settings.statusCode = ctx.settings.errorCode;
+  if (showConfig) {
+    content = globalConfig
   }
 
-  // Set content type if needed
-  if (ctx.settings.echoContext || (typeof content == "object" && !Buffer.isBuffer(content))) {
-    ctx.response.headers["Content-Type"] = "application/json; charset=utf-8";
-  }
-
-  // Log and store request
-  logRequest(ctx);
-  requestHistory.push(ctx);
-
-  // Set status code and headers
-  res.status(parseInt(ctx.settings.statusCode));
-
-  Object.entries(ctx.response.headers).forEach(([h, v]) => res.setHeader(h, v));
-  removeExpressHeaders(res);
-
-  // Handle response content
-  let url = req.url;
-  let configuredResponse = settings.urlConfigs[url]?.body;
-  content = content || configuredResponse || (req.method != "GET" && req.body) || { ...ctx, settings: undefined };
-  if (ctx.settings.echoBody) {
-    content = ctx.request.body;
-  }
-  if (ctx.settings.echoContext) {
-    content = formatResponseContext(ctx, content);
-  }
-  if (content) {
-    if (typeof content == "object") {
-      res.json(content);
-    } else {
-      res.send(content);
-    }
-  }
-  res.end();
-}
-
-function removeExpressHeaders(res) {
-  res.removeHeader("X-Powered-By");
-  res.removeHeader("Date");
-  res.removeHeader("Connection");
-  res.removeHeader("Keep-Alive");
-}
-
-// Generic response handler
-async function handleResponse(req, res, content = null) {
   setTimeout(() => {
-    handleResponseLogic(req, res, content);
-  }, req.ctx.settings.delay);
+    handleResponse(req, res, content);
+  }, req.ctx.responseConfig.delay);
 }
 
-app.all(/(.*)/, async (req, res) => {
-  let url = req.url;
-  console.log("catch all *", url);
-  let configuredResponse = settings.urlConfigs[url]?.body;
-  await handleResponse(req, res, configuredResponse || req.ctx);
-});
-
-// Start server
-app.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, () => {
   console.log(`Server running at http://${HOST}:${PORT}/`);
 });

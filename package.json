@@ -8,9 +8,9 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "express": "^5.0.0"
   },
-  "devDependencies": {},
+  "devDependencies": {
+  },
   "scripts": {
     "test": "node --test tests.mjs"
   },
