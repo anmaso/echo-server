@@ -1,0 +1,19 @@
+{
+  "name": "echo-server",
+  "version": "1.0.0",
+  "description": "Simple HTTP echo server with some additional functionality",
+  "main": "index.js",
+  "engines": {
+    "npm": ">=8.0.0 <9.0.0",
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "express": "^5.0.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "node --test tests.mjs"
+  },
+  "author": "",
+  "license": "ISC"
+}
