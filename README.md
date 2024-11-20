@@ -10,67 +10,54 @@ Host and port for the server are taken from `HOST` and `PORT` environment variab
 
 The server implements some commands to modify the default behaviour.
 
-To send a command, use a GET request with the following format
+To send a command, use a request with the following format
 
-`/:[command]/[arg1]/[arg2]`
+`/?configParam1=value1&configParam2=value2`
 
 
+The best way to explore the options is using the UI
 
-|Command      |Description                                           | Default |
-|-------------|------------------------------------------------------|---------|
-|settings     | Displays the current server settings                 |         |
-|echobody     | Returns the BODY                                     | true    |
-|echocontext  | Returns as JSON the echo response context            | false   |
-|consolelog   | Logs everything through the server console           | true    |
-|statuscode   | Sets the status code for all subsequent requests     | 200     |
-|errorcode    | Sends the error code at every request number [arg1]  | 200 / 1 |
-|string       | Returns a BODY of a random string of length [arg1]   |         |
+http://localhost:3000?ui=true
+
+
+|Command      |Description                                           | Value           |
+|-------------|------------------------------------------------------|-----------------|
+|path         | All configParams will refer to this path             | an url path     |
+|showConfig   | Displays the current server settings                 | any value       |
+|body         | Depends on the method, sets the response to <br/>-GET: body param, <br/>POST: the body of the request                                       |                 |
+|echoContext  | Adds to the response the config of the request       | false   |
+|consoleLog   | Logs everything through the server console           | true    |
+|statusCode   | Sets the status code for all subsequent requests     | 200     |
+|errorCode    | Error code to send when #request/errorPct=0          | 200 / 1 |
+|errorPct     | Configure to send errorCode at every errorPct request| 200 / 1 |
+|string       | Returns a BODY of a random string of length value    |         |
 |cachedstring | Random cached string, same value for the same size   |         |
-
-## header commands
-
-Commands can also be sent using headers with `x-cmd-` prefix
-
-```
-curl http://localhost:3000/hello-world -H "x-cmd-echojson: true"`
-curl http://localhost:3000/hello-world -H "x-cmd-statuscode: 401" -v`
-```
-
-
+|proxy        | URL to retrieve the response from                    |         |
+|delay        | Delays the response by x miliseconds                 |         |
 
 
 # test commands
 
-Here there are some test commands for the echo server
+Here there are some examples for the echo server
 
 ```
 
 curl http://localhost:3000/
-curl http://localhost:3000/ -v
 
 curl http://localhost:3000/hello-world
-curl http://localhost:3000/hello-world -H "x-cmd-echocontext: true"
-curl http://localhost:3000/hello-world -H "x-cmd-statuscode: 401" -v
+curl "http://localhost:3000/hello-world?statusCode=500"
 
 
-curl http://localhost:3000/:settings
-curl http://localhost:3000/:settings -v
-curl http://localhost:3000/:echocontext/true
-curl http://localhost:3000/:echocontext/false
+curl "http://localhost:3000/?showConfig=true"
 
-curl -X POST http://localhost:3000/:echocontext/true -d 'hello'
-curl -v -X POST http://localhost:3000/:statuscode/500
-curl -v -X POST http://localhost:3000/:statuscode/200
-curl -v -X POST http://localhost:3000/:globalstatuscode/500
-curl http://localhost:3000/ -v
-curl -v -X POST http://localhost:3000/:errorcode/500/4 -d 'hello'
-curl -v -X POST http://localhost:3000/:errorcode/200/4 -d 'hello'
-curl -v http://localhost:3000/
 
-curl -v http://localhost:3000/:randombuffer/100
-curl -v http://localhost:3000/:randomstring/100
-curl -v http://localhost:3000/:string/100
+curl "http://localhost:3000/?path=slow-response&delay=1000"
+# this one will take 1 sec to answer
+curl "http://localhost:3000/?slow-response"
 
-curl -v http://localhost:3000/:string/100
+
+curl "http://localhost:3000/?path=google&proxy=https://www.google.com"
+# retrieve google home page
+curl "http://localhost:3000/google"
 
 ```
