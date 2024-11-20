@@ -1,4 +1,3 @@
-const express = require("express");
 const os = require("os");
 const http = require('http');
 const https = require('https');

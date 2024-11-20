@@ -28,8 +28,8 @@ http://localhost:3000?ui=true
 |echoContext  | Adds to the response the config of the request       | false   |
 |consoleLog   | Logs everything through the server console           | true    |
 |statusCode   | Sets the status code for all subsequent requests     | 200     |
-|errorCode    | Error code to send when #request/errorPct=0          | 200 / 1 |
-|errorPct     | Configure to send errorCode at every errorPct request| 200 / 1 |
+|errorCode    | Error code to send when #request/errorPct=0          | 500     |
+|errorPct     | Configure to send errorCode at every errorPct request| 1       |
 |string       | Returns a BODY of a random string of length value    |         |
 |cachedstring | Random cached string, same value for the same size   |         |
 |proxy        | URL to retrieve the response from                    |         |
@@ -49,6 +49,12 @@ curl "http://localhost:3000/hello-world?statusCode=500"
 
 
 curl "http://localhost:3000/?showConfig=true"
+
+# simulate errors every 3 requests
+curl "http://localhost:3000/?path=possible-error&errorCode=500&errorPct=3"
+curl "http://localhost:3000/possible-error"
+curl "http://localhost:3000/possible-error"
+curl "http://localhost:3000/possible-error"  <-- error 500
 
 
 curl "http://localhost:3000/?path=slow-response&delay=1000"
