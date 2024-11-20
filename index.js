@@ -1,6 +1,7 @@
 const express = require("express");
 const os = require("os");
 const http = require('http');
+const https = require('https');
 const url = require('url');
 const fs = require('fs');
 const PATH = require('path');
@@ -80,6 +81,30 @@ const getBuffer = (length) => {
   return buffer;
 };
 
+const request = async (url, options) => await new Promise((resolve, reject) => {
+  try {
+
+    const req = (url.startsWith('https')? https:http).request(url, options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        resolve(data);
+      });
+    }).on('error', (e) => {
+      reject(e);
+    });
+    if (options.body) {
+      req.write(options.body);
+    }
+    req.end();
+  } catch (e) {
+    return '<error>';
+  }
+});
+
+
 const formatResponseContext = (ctx, body) => ({
   method: ctx.request.method,
   url: ctx.request.url,
@@ -92,7 +117,7 @@ const formatResponseContext = (ctx, body) => ({
 const log = (...args) => globalConfig.consoleLog && console.log(...args);
 
 const logRequest = (ctx) => {
-  log(`${fmtDate(ctx.time)} ${ctx.responseConfig.statusCode} ${ctx.request.method} ${ctx.request.url}`);
+  log(`${ctx.time} ${ctx.responseConfig.statusCode} ${ctx.request.method} ${ctx.request.url}`);
   if (globalConfig.consoleCompact) {
     return;
   }
@@ -127,6 +152,13 @@ async function handleResponse(req, res, content) {
   if (ctx.responseConfig.echoBody) {
     content = ctx.request.body;
   }
+  if (ctx.responseConfig.proxy) {
+    content = await request(ctx.responseConfig.proxy, {
+      method: ctx.request.method,
+      body: req.body
+    })
+  }
+
   if (ctx.responseConfig.echoContext) {
     content = formatResponseContext(ctx, content);
   }
@@ -151,7 +183,6 @@ function removeExpressHeaders(res) {
   res.removeHeader("Connection");
   res.removeHeader("Keep-Alive");
 }
-
 
 function getBody(request) {
   return new Promise((resolve) => {
@@ -184,6 +215,9 @@ const sendUI = (req, res) => {
 
 }
 
+const getLogs = (n, filter) => {
+  return requestHistory.slice(-n).filter((r) => !filter || r.request.url.includes(filter));
+}
 
 const processRequest = async (req, res, requestBody) => {
   globalConfig.requestCounter += 1;
@@ -202,15 +236,15 @@ const processRequest = async (req, res, requestBody) => {
     },
     responseConfig: { ...globalConfig.allUrls, ...globalConfig.byUrl[requestPath] },
     response: { headers: {} },
-    time: new Date(),
+    time: fmtDate(new Date()),
   };
   let content = req.ctx;
   addStat(requestPath, req.method);
 
-  let { delay, statusCode, errorCode, errorPct, reset, string, stringCache, stats, log, body, echoBody, showConfig, path, ui } = query;
+  let { delay, statusCode, errorCode, errorPct, reset, string, stringCache, stats,
+    consoleLog, log, logCompact, logFilter, body, echoBody, showConfig, path, ui, proxy } = query;
 
   if (ui) {
-    console.log("UI requested");
     return sendUI(req, res);
   }
 
@@ -230,10 +264,13 @@ const processRequest = async (req, res, requestBody) => {
   }
   if (pathParam && body) {
     if (req.method == "POST") {
-      config.body = content;
+      config.body = requestBody;
     } else {
       config.body = body;
     }
+  }
+  if (consoleLog) {
+    globalConfig.consoleLog = consoleLog == "true";
   }
   if (echoBody) {
     config.echoBody = echoBody == "true"
@@ -259,6 +296,10 @@ const processRequest = async (req, res, requestBody) => {
   if (stringCache) {
     content = getString(parseInt(stringCache))
   }
+  if (proxy) {
+    config.proxy = proxy;
+  }
+
   if (stats) {
     if (stats == '*') {
       content = Object.entries(globalConfig.byUrl).reduce((acc, [k, v]) => ({ ...acc, ...(v.counter && { [k]: v.counter }) }), {})
@@ -266,8 +307,12 @@ const processRequest = async (req, res, requestBody) => {
       content = globalConfig.byUrl[stats]?.counter || {}
     }
   }
+
   if (log) {
-    content = requestHistory.slice(-parseInt(log));
+    content = getLogs(log, logFilter);
+  }
+  if (logCompact) {
+    content = getLogs(logCompact, logFilter).map((r) => `${r.time} ${r.responseConfig.statusCode} ${r.request.method} ${r.request.url}`);
   }
   if (showConfig) {
     content = globalConfig

@@ -3,83 +3,219 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>API Tester</title>
+    <link rel=stylesheet href=https://cdn.jsdelivr.net/npm/pretty-print-json@3.0/dist/css/pretty-print-json.css>
+    <script src=https://cdn.jsdelivr.net/npm/pretty-print-json@3.0/dist/pretty-print-json.min.js></script>
+    <title>Echo server</title>
     <style>
-      body {
-        font-family: Arial, sans-serif;
-        margin: 20px;
-      }
-      input,
-      select,
-      textarea {
-        display: block;
-        margin: 10px 0;
-        width: 100%;
-      }
-      button {
-        padding: 10px 20px;
-      }
+body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f4f4f9;
+      color: #333;
+    }
+    h1, h2 {
+      color: #444;
+    }
+    input, select, textarea, button {
+      display: inline-block;
+      margin: 10px 0;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    textarea{
+      width: 100%;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    table {
+      border-collapse: collapse;
+    }
+    td {
+      padding: 10px;
+      vertical-align: top;
+    }
+    pre {
+      background-color: #e9ecef;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .form-section {
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+    .form-section h2 {
+      margin-top: 0;
+    }
     </style>
   </head>
   <body>
-    <h1>API Tester</h1>
-    <label for="method">HTTP Method:</label>
-    <select id="method" name="method">
-      <option value="GET">GET</option>
-      <option value="POST">POST</option>
-      <option value="PUT">PUT</option>
-      <option value="DELETE">DELETE</option>
-    </select>
+    <h1>Echo server</h1>
+    <table cellpadding="10">
+      <tr>
+        <td valign="top" style="border-right: 1px solid #ccc;padding: 5px">
+          <h2>Request Builder</h2>
+          <label for="commands">Commands:</label>
+          <select id="commands">
+            <option value="">Select a command</option>
+            <option value="showConfig">Show Config</option>
+            <option value="reset">Reset config</option>
+            <option value="sayHello">Return 'hello' when calling /say-hello</option>
+            <option value="sayHelloJSON">Return '{"say":"hello"}' when calling /say-hello-json</option>
+            <option value="string">Get random string</option>
+            <option value="log">Show requests log</option>
+            <option value="logCompact">Show log in compact format</option>
+            <option value="logFilter">Show log filtering by URL</option>
+            <option value="">Show log filtering by URL</option>
 
-    <label for="path">Path:</label>
-    <input type="text" id="path" name="path" placeholder="/example" />
+          </select>
+          <br/>
 
-    <label for="queryParams">Query Parameters (JSON format):</label>
-    <textarea
-      id="queryParams"
-      name="queryParams"
-      rows="4"
-      placeholder='{"key1": "value1", "key2": "value2"}'
-    ></textarea>
+          HTTP Method:
+          <input type="radio" id="get" name="method" value="GET" checked>
+          <label for="get">GET</label>
+          <input type="radio" id="post" name="method" value="POST">
+          <label for="post">POST</label>
+          <input type="radio" id="put" name="method" value="PUT">
+          <label for="put">PUT</label>
+          <input type="radio" id="delete" name="method" value="DELETE">
+          <label for="delete">DELETE</label>
+          <br/>
 
-    <label for="body">Request Body (JSON format):</label>
-    <textarea
-      id="body"
-      name="body"
-      rows="4"
-      placeholder='{"key": "value"}'
-    ></textarea>
+          <label for="path">Path:</label>
+          <input type="text" id="path" name="path" placeholder="/example" />
 
-    <button id="request">Send Request</button>
-    <button id="config">Show config</button>
+          <br/>
+          <label for="queryParams">Query Parameters ( key [space] value [new line]):</label>
+          <br/>
+          <textarea
+            id="queryParams"
+            name="queryParams"
+            rows="4"
+            placeholder='key1 value1
+key2 value2'
+          ></textarea>
 
-    <h2>Response</h2>
-    <pre id="response"></pre>
+          <br/>
+          <label for="body">Request Body:</label>
+          <br/>
+          <textarea
+            id="body"
+            name="body"
+            rows="4"
+            placeholder=''
+          ></textarea>
+          <br/>
+
+          <button id="sendRequest">Send Request</button>
+          <button id="config">Show config</button>
+          <button id="reset">Reset</button>
+          <br/>
+          <label for="logfilter">Log filter:</label>
+          <input type="text" id="logfilter" name="logfilter" placeholder="some-path" />
+          <br/>
+          <button id="log">Show log</button>
+          <button id="logCompact">Show log compact</button>
+        </td>
+        <td valign="top">
+          <h2>Request</h2>
+          <pre id="request"></pre>
+
+          <h2>Response</h2>
+          <pre id="response"></pre>
+        </td>
+      </tr>
+    </table>
 
     <script>
-      document
-        .getElementById("config")
-        .addEventListener("click", async (event) => {
-          event.preventDefault();
-          const response = await fetch("/?showConfig=true");
-          const responseData = await response.json();
-          document.getElementById("response").textContent = JSON.stringify(
-            responseData,
-            null,
-            2
-          );
-        });
-      document
-        .getElementById("request")
+      const $ = (id)=>document.getElementById(id);
+      const tryJSON = (str) => {
+        if (typeof str !== "string") {
+          return true;
+        }
+        try {
+            return JSON.parse(str);
+        } catch (e) {
+            return false;
+        }
+      }
+
+
+      const display = (content, replace) => {
+        if (replace) {
+          $("response").textContent = "";
+        }
+        let child;
+        let json = tryJSON(content);
+        if (json){
+          child = document.createElement("div");
+          child.innerHTML = prettyPrintJson.toHtml(json)
+        }else{
+          child = document.createTextNode(content);
+          child.textContent = content;
+        }
+        $("response").appendChild(child);
+      }
+
+      const request = async (url, options)=>{
+        options = options || {};
+        options.method = options.method || "GET";
+
+        if (url.constructor!=URL) {
+          //path = window.location.pathname + path;
+         url = new URL(url, window.location.origin);
+        }
+
+        $('request').textContent = options.method + " " + url;
+        try {
+          const response = await fetch(url, options);
+          display( "Status: " + response.status + "\n", true);
+          display( "Status Text: " + response.statusText + "\n", false);
+          display( "Headers: " + JSON.stringify( Object.fromEntries(response.headers), null, 2) + "\n", false);
+          const responseData = await response.text();
+          display( responseData, false);
+        } catch (error) {
+          display( "Error: " + error.message, true);
+        }
+      };
+
+      const buttonClick = (id, handler)=> $(id).addEventListener("click", async (event) => {
+        handler()
+      });
+
+        const logFilter = ()=> $("logfilter").value? "&logFilter=" + $("logfilter").value : "";
+
+        buttonClick('config', ()=>request('?showConfig=true'))
+        buttonClick('log', ()=>request('?log=10'+logFilter()))
+        buttonClick('logCompact', ()=>request('?logCompact=10'+logFilter()))
+        buttonClick('reset', ()=>request('?reset=true'))
+
+        $("sendRequest")
         .addEventListener("click", async (event) => {
           event.preventDefault();
 
-          const method = document.getElementById("method").value;
-          const path = document.getElementById("path").value;
-          const queryParams = JSON.parse(
-            document.getElementById("queryParams").value || "{}"
-          );
-          const body = document.getElementById("body").value;
+          //const method = document.getElementById("method").value;
+          const method = document.querySelector('input[name="method"]:checked').value;
+          const path = $("path").value;
+          const queryParams = $("queryParams").value.split('\n').reduce((acc, line)=>{
+            const [key, ...value] = line.split(' ');
+            if(key && value){
+              acc[key] = value.join(' ');
+            }
+            return acc;
+          }, {});
+          const body = $("body").value;
 
           const url = new URL(path, window.location.origin);
           Object.keys(queryParams).forEach((key) =>
@@ -94,19 +230,50 @@
             body: method !== "GET" ? body : undefined,
           };
 
-          try {
-            const response = await fetch(url, options);
-            const responseData = await response.json();
-            document.getElementById("response").textContent = JSON.stringify(
-              responseData,
-              null,
-              2
-            );
-          } catch (error) {
-            document.getElementById("response").textContent =
-              "Error: " + error.message;
-          }
+          request(url, options);
         });
+
+        const method = (value) => {
+          document.querySelector('input[name="method"][value="'+value+'"]').checked = true;
+        }
+
+        $("commands").addEventListener("change", (event) => {
+      const command = event.target.value;
+        $("path").value = "/";
+        $("body").value = '';
+        method("GET");
+      switch (command) {
+        case "showConfig":
+          $("queryParams").value = 'showConfig true';
+          break;
+        case "reset":
+          $("queryParams").value = 'reset true';
+          break;
+        case "log":
+          $("queryParams").value = 'log 10';
+          break;
+        case "logCompact":
+          $("queryParams").value = 'logCompact 10';
+          break;
+        case "logFilter":
+          $("queryParams").value = 'logFilter logFilter';
+          break;
+        case "string":
+          $("queryParams").value = 'string 100';
+          break;
+        case "sayHello":
+          $("queryParams").value = "path say-hello\nbody hello";
+          break;
+        case "sayHelloJSON":
+          $("queryParams").value = "path say-hello-json";
+          $("body").value = '{"say":"hello"}';
+          method("POST")
+          break;
+        default:
+          $("queryParams").value = "";
+          break;
+      }
+      })
     </script>
   </body>
 </html>

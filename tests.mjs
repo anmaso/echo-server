@@ -168,13 +168,21 @@ describe("HTTP Server Test Suite", () => {
 
   })
   test("show log", async () => {
-    let response = await makeRequest("/a");
-    response = await makeRequest("/?log=true");
+    let response = await makeRequest("/some-path");
+    response = await makeRequest("/?log=10");
     response.assertStatus(200);
     let json = JSON.parse(response.body);
     assert.ok(json.length > 0, "log should have at least one entry");
-    assert.strictEqual(json.slice(-1)[0].request.url, "/a", "penultimate log entry should be for /a");
+    assert.strictEqual(json.slice(-1)[0].request.url, "/some-path", "penultimate log entry should be for /a");
+    response = await makeRequest("/do-not-show-this-in-path");
+    response = await makeRequest("/do-not-show-this-in-path");
+    response = await makeRequest("/do-not-show-this-in-path");
+    response = await makeRequest("/do-not-show-this-in-path");
+    response = await makeRequest("/?log=10&logFilter=some");
+    assert.equal(response.body.indexOf("do-not-show"), -1, "do-not-show should not show in logs");
+
   });
+
   test("echo body", async () => {
     let response = await makeRequest("/?echoBody=true");
     response.assertStatus(200);
@@ -206,6 +214,18 @@ describe("HTTP Server Test Suite", () => {
     response.assertStatus(200);
     assert.notStrictEqual(response.body, "hello", "Response body should not be hello");
   })
+
+  //test for proxy option
+  test("proxy", async () => {
+    let response = await makeRequest("/?path=proxy-google&proxy=https://www.google.com");
+    response.assertStatus(200);
+    response = await makeRequest("/proxy-google");
+    response.assertStatus(200);
+    assert.ok(response.body.indexOf("google") > -1, "Response body should contain google");
+  })
+
+
+
 });
 
 
